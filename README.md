@@ -19,7 +19,9 @@ Requires TeX Live with `newtxtext/newtxmath` (Times), TikZ, and pgfplots. Output
 
 ## Figures
 
-- **Fig. 1** (pipeline) is drawn in TikZ directly in `sections/method.tex`; **Fig. 2** (VRAM/FPS vs. T) is drawn with pgfplots from the Table 3 TP data. Both compile with the paper, no external files. Series colors are a colorblind-safe palette (blue/orange/aqua/violet) with distinct marker shapes.
+- **Fig. 1** (pipeline, TikZ) and **Fig. 2** (VRAM/FPS vs. T, pgfplots) live as single-source bodies in `figures/fig1_body.tex` and `figures/fig2_body.tex`, `\input` both by the paper and by the standalone export wrappers `figures/fig1_pipeline.tex` / `figures/fig2_efficiency.tex`. Edit the body file and both stay in sync.
+- Standalone exports (`.pdf` + 300 dpi `.png`) are committed in `figures/`; rebuild with `latexmk -pdf` inside `figures/` and `pdftoppm -png -r 300 -singlefile <name>.pdf <name>`.
+- Series colors are a colorblind-safe palette (blue/orange/aqua/violet) with distinct marker shapes.
 - The former Fig. 3 (qualitative point clouds) was removed per editorial decision (2026-09-04), together with the Qualitative Results subsection.
 
 ## Placeholders / TODO before submission

@@ -3,66 +3,7 @@
 
 \begin{figure*}[t]
     \centering
-    \begin{tikzpicture}[
-        font=\footnotesize,
-        >={Latex[length=1.6mm]},
-        bb/.style={draw=gray!60, fill=gray!10, rounded corners=3pt,
-                   minimum height=0.9cm, align=center, inner sep=4pt},
-        box/.style={draw=vizviolet!70, fill=vizviolet!7, rounded corners=3pt,
-                    minimum height=1.66cm},
-        chip/.style={draw=vizviolet!65, fill=white, rounded corners=2pt,
-                     minimum height=0.52cm, align=center, inner sep=3pt,
-                     font=\scriptsize},
-        lbl/.style={font=\scriptsize, text=black!70, align=center},
-    ]
-        % Backbone lane.
-        \node[bb] (frame) at (0.7,0) {Frame $I_t$};
-        \node[bb] (enc)   at (2.65,0) {Image\\encoder};
-        \node[bb] (dec)   at (5.5,0) {Causal streaming\\decoder (frozen)};
-        \node[bb] (heads) at (8.4,0) {Prediction\\heads};
-        \node[anchor=west, align=left, font=\scriptsize] (out) at (9.9,0)
-            {camera $\hat{\mathbf{P}}_t$ \; depth $\hat{\mathbf{D}}_t$\\
-             pointmap $\hat{\mathbf{X}}_t$ \; conf.\ $\hat{\mathbf{C}}_t$};
-        \draw[->, gray!70] (frame) -- (enc);
-        \draw[->, gray!70] (enc) -- (dec);
-        \draw[->, gray!70] (dec) -- (heads);
-        \draw[->, gray!70] (heads) -- (out.west);
-        % Bounded KV cache with pinned frame-1 cells.
-        \node[box, minimum width=3.2cm] (cache) at (3.35,-2.08) {};
-        \node[lbl, anchor=north] at ([yshift=-3.5pt]cache.north) {bounded KV cache};
-        \foreach \i/\c in {0/vizviolet!75, 1/vizviolet!75, 2/vizviolet!15,
-                           3/vizviolet!15, 4/vizviolet!15, 5/vizviolet!15,
-                           6/vizviolet!15, 7/vizviolet!15}{
-            \draw[draw=vizviolet!60, fill=\c]
-                ($(cache.center)+(-1.24+0.31*\i,-0.19)$) rectangle ++(0.26,0.26);}
-        \node[font=\tiny, text=white] at ($(cache.center)+(-1.11,-0.06)$) {1};
-        \node[font=\tiny, text=white] at ($(cache.center)+(-0.80,-0.06)$) {1};
-        \node[lbl, anchor=south] at ([yshift=2.5pt]cache.south)
-            {$|\mathcal{M}_t|\le B$;\; frame-1 pinned};
-        % Budgeted cache-management module with inner stages.
-        \node[box, minimum width=7.0cm] (mgr) at (10.15,-2.08) {};
-        \node[lbl, anchor=north] at ([yshift=-3.5pt]mgr.north)
-            {\textit{budgeted cache management (training-free)}};
-        \node[chip] (c1) at (7.42,-2.42)  {CFAS $r$};
-        \node[chip] (c2) at (8.68,-2.42)  {SCR $s$};
-        \node[chip] (c3) at (9.92,-2.42)  {TSA $a$};
-        \node[chip] (c4) at (11.42,-2.42) {hybrid $h(\beta,d)$};
-        \node[chip] (c5) at (12.98,-2.42) {top-$k$};
-        \draw[->, vizviolet!70, line width=0.6pt] (c1) -- (c2);
-        \draw[->, vizviolet!70, line width=0.6pt] (c2) -- (c3);
-        \draw[->, vizviolet!70, line width=0.6pt] (c3) -- (c4);
-        \draw[->, vizviolet!70, line width=0.6pt] (c4) -- (c5);
-        % Loop: cache -> decoder -> management -> cache.
-        \draw[->, vizviolet!80] ([xshift=0.95cm]cache.north) --
-            node[lbl, left=2pt] {cross-frame\\attention}
-            ([xshift=0.95cm]cache.north |- dec.south);
-        \draw[->, vizviolet!80] ([xshift=1.15cm]dec.south) to[out=-75, in=90]
-            node[lbl, pos=0.4, right=2pt] {attention maps}
-            ([xshift=-2.55cm]mgr.north);
-        \draw[->, vizviolet!80] (mgr.west) --
-            node[lbl, above=1pt] {update $\mathcal{M}_t$}
-            (cache.east);
-    \end{tikzpicture}
+    \input{figures/fig1_body}
     \caption{Overview of \method. Each incoming frame is encoded and decoded causally against a bounded KV cache, yielding per-frame camera parameters, depth, pointmap, and confidence. The cross-frame attention of the current frame provides a saliency signal for every cached token (CFAS), which is smoothed over the source patch grid (SCR) and accumulated over time (TSA). Budgeted cache compression (BCC) fuses the accumulated importance with a diversity score, allocates the budget across layers, and retains the top-scoring tokens, with the reference frame pinned, so that the cache never exceeds $B$ tokens.}
     \label{fig:pipeline}
 \end{figure*}

@@ -1,0 +1,17 @@
+% Standalone export of Figure 2 (efficiency curves).
+% Build: latexmk -pdf fig2_efficiency.tex   (run inside figures/)
+% PNG:   pdftoppm -png -r 300 -singlefile fig2_efficiency.pdf fig2_efficiency
+\documentclass[varwidth=10.5cm,border=4pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{newtxtext,newtxmath}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\definecolor{vizblue}{HTML}{2A78D6}
+\definecolor{vizorange}{HTML}{EB6834}
+\definecolor{vizaqua}{HTML}{1BAF7A}
+\definecolor{vizviolet}{HTML}{4A3AA7}
+\newcommand{\method}{Keep3R}
+\begin{document}
+\centering
+\input{fig2_body}
+\end{document}
