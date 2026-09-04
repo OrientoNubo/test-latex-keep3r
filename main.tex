@@ -1,0 +1,195 @@
+\documentclass[10pt]{article}
+\usepackage{cacs2026}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% Allow several small tables to stack at the top of one page instead of
+% being forced onto a float-only page.
+\setcounter{topnumber}{4}
+\setcounter{totalnumber}{6}
+\renewcommand{\topfraction}{0.95}
+\renewcommand{\textfraction}{0.03}
+\renewcommand{\floatpagefraction}{0.9}
+
+% Colorblind-safe series colors shared by the figures.
+\definecolor{vizblue}{HTML}{2A78D6}   % StreamVGGT
+\definecolor{vizorange}{HTML}{EB6834} % Evict3R
+\definecolor{vizaqua}{HTML}{1BAF7A}   % InfiniteVGGT
+\definecolor{vizviolet}{HTML}{4A3AA7} % Keep3R (ours)
+
+% -----------------------------------------------------------------------------
+% CACS 2026 submission
+% Compile with: latexmk -pdf main.tex
+% Page budget: <= 6.5 pages including references (final target: 6 pages).
+% -----------------------------------------------------------------------------
+
+% Method name -- change here to rename globally.
+\newcommand{\method}{Keep3R}
+
+\begin{document}
+
+\CACSmaketitle
+  {\method: Memory-Bounded Streaming Visual Geometry\\ for Long-Horizon Robotic Manipulation}
+  {First A. Author, Second B. Author, and Third C. Author
+   % TODO(authors): fill in real author list and IEEE membership notes.
+  }
+
+\begin{CACSabstract}
+\abstractnameCACS \input{sections/abstract}
+\end{CACSabstract}
+
+\CACSfirstpagefootnote{%
+% TODO(authors): replace with real support acknowledgment and affiliations.
+This work was supported by [funding agency placeholder].\\
+F. A. Author is with the Department of [Placeholder], [University Placeholder],
+Taipei, Taiwan (e-mail: author@placeholder.edu.tw).\\
+S. B. Author and T. C. Author are with [University Placeholder], Taiwan
+(e-mail: \{author2, author3\}@placeholder.edu.tw).}
+
+\input{sections/intro}
+\input{sections/related}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/conclusion}
+
+% References are ordered by first citation in the text (IEEE convention).
+\begin{thebibliography}{24}
+% NOTE: keep this list ordered by first citation when adding entries.
+
+\bibitem{schonberger2016sfm}
+J. L. Sch\"onberger and J.-M. Frahm,
+``Structure-from-motion revisited,'' in \textit{Proc. IEEE Conf. Comput. Vis.
+Pattern Recognit. (CVPR)}, 2016, pp. 4104--4113.
+
+\bibitem{wang2024dust3r}
+S. Wang, V. Leroy, Y. Cabon, B. Chidlovskii, and J. Revaud,
+``{DUSt3R}: Geometric {3D} vision made easy,'' in
+\textit{Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2024,
+pp. 20697--20709.
+
+\bibitem{wang2025vggt}
+J. Wang, M. Chen, N. Karaev, A. Vedaldi, C. Rupprecht, and D. Novotny,
+``{VGGT}: Visual geometry grounded transformer,'' in
+\textit{Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2025,
+pp. 5294--5306.
+
+\bibitem{yang2025fast3r}
+J. Yang \textit{et al.},
+``{Fast3R}: Towards {3D} reconstruction of 1000+ images in one forward pass,''
+in \textit{Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2025,
+pp. 21924--21935.
+
+\bibitem{zhuo2025streamvggt}
+% Note: arXiv v1 was titled "Streaming 4D Visual Geometry Transformer";
+% v2 (Mar 2026) dropped "4D". Accepted to ICLR 2026 — verify the camera-ready
+% title on OpenReview before submission.
+D. Zhuo, W. Zheng, J. Guo, Y. Wu, J. Zhou, and J. Lu,
+``Streaming visual geometry transformer,'' in
+\textit{Proc. Int. Conf. Learn. Represent. (ICLR)}, 2026.
+
+\bibitem{zhang2023h2o}
+Z. Zhang \textit{et al.},
+``{H$_2$O}: Heavy-hitter oracle for efficient generative inference of large
+language models,'' in \textit{Proc. Adv. Neural Inf. Process. Syst.
+(NeurIPS)}, 2023, pp. 34661--34710.
+
+\bibitem{xiao2024streamingllm}
+G. Xiao, Y. Tian, B. Chen, S. Han, and M. Lewis,
+``Efficient streaming language models with attention sinks,'' in
+\textit{Proc. Int. Conf. Learn. Represent. (ICLR)}, 2024.
+
+\bibitem{khazatsky2024droid}
+A. Khazatsky \textit{et al.},
+``{DROID}: A large-scale in-the-wild robot manipulation dataset,'' in
+\textit{Proc. Robot.: Sci. Syst. (RSS)}, 2024.
+
+\bibitem{huang2026pointworld}
+W. Huang, Y.-W. Chao, A. Mousavian, M.-Y. Liu, D. Fox, K. Mo, and L. Fei-Fei,
+``{PointWorld}: Scaling {3D} world models for in-the-wild robotic
+manipulation,'' \textit{arXiv preprint arXiv:2601.03782}, 2026.
+
+\bibitem{wang2025cut3r}
+Q. Wang, Y. Zhang, A. Holynski, A. A. Efros, and A. Kanazawa,
+``Continuous {3D} perception model with persistent state,'' in
+\textit{Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2025,
+pp. 10510--10522.
+
+\bibitem{chen2025ttt3r}
+X. Chen, Y. Chen, Y. Xiu, A. Geiger, and A. Chen,
+``{TTT3R}: {3D} reconstruction as test-time training,'' in
+\textit{Proc. Int. Conf. Learn. Represent. (ICLR)}, 2026.
+
+\bibitem{mahdi2025evict3r}
+S. Mahdi, F. Ayar, E. Javanmardi, M. Tsukada, and M. Javanmardi,
+``{Evict3R}: Training-free token eviction for memory-bounded streaming visual
+geometry transformers,'' \textit{arXiv preprint arXiv:2509.17650}, 2025.
+
+\bibitem{yuan2026infinitevggt}
+S. Yuan \textit{et al.},
+``{InfiniteVGGT}: Visual geometry grounded transformer for endless streams,''
+\textit{arXiv preprint arXiv:2601.02281}, 2026.
+
+\bibitem{leroy2024mast3r}
+V. Leroy, Y. Cabon, and J. Revaud,
+``Grounding image matching in {3D} with {MASt3R},'' in
+\textit{Proc. Eur. Conf. Comput. Vis. (ECCV)}, 2024, pp. 71--91.
+
+\bibitem{wang2025spann3r}
+H. Wang and L. Agapito,
+``{3D} reconstruction with spatial memory,'' in
+\textit{Proc. Int. Conf. 3D Vision (3DV)}, 2025, pp. 78--89.
+
+\bibitem{wu2025point3r}
+Y. Wu, W. Zheng, J. Zhou, and J. Lu,
+``{Point3R}: Streaming {3D} reconstruction with explicit spatial pointer
+memory,'' \textit{arXiv preprint arXiv:2507.02863}, 2025.
+
+\bibitem{chen2025long3r}
+Z. Chen, M. Qin, T. Yuan, Z. Liu, and H. Zhao,
+``{LONG3R}: Long sequence streaming {3D} reconstruction,'' in
+\textit{Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV)}, 2025.
+
+\bibitem{bolya2023tome}
+D. Bolya, C.-Y. Fu, X. Dai, P. Zhang, C. Feichtenhofer, and J. Hoffman,
+``Token merging: Your {ViT} but faster,'' in
+\textit{Proc. Int. Conf. Learn. Represent. (ICLR)}, 2023.
+
+\bibitem{wang2026fastvggt}
+Y. Wang \textit{et al.},
+``{FastVGGT}: Fast visual geometry transformer,'' in
+\textit{Proc. Int. Conf. Learn. Represent. (ICLR)}, 2026.
+
+\bibitem{chen2026ghost}
+L. Chen, J. Wu, Z. Li, and Y. Zhang,
+``{GHOST}: Geometry-hierarchical online streaming token eviction for
+efficient {3D} reconstruction,'' \textit{arXiv preprint arXiv:2605.15852},
+2026.
+
+\bibitem{dosovitskiy2021vit}
+A. Dosovitskiy \textit{et al.},
+``An image is worth 16$\times$16 words: Transformers for image recognition at
+scale,'' in \textit{Proc. Int. Conf. Learn. Represent. (ICLR)}, 2021.
+
+\bibitem{vaswani2017attention}
+A. Vaswani \textit{et al.},
+``Attention is all you need,'' in \textit{Proc. Adv. Neural Inf. Process.
+Syst. (NeurIPS)}, 2017, pp. 5998--6008.
+
+\bibitem{eigen2014depth}
+D. Eigen, C. Puhrsch, and R. Fergus,
+``Depth map prediction from a single image using a multi-scale deep network,''
+in \textit{Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)}, 2014,
+pp. 2366--2374.
+
+\bibitem{yao2018mvsnet}
+Y. Yao, Z. Luo, S. Li, T. Fang, and L. Quan,
+``{MVSNet}: Depth inference for unstructured multi-view stereo,'' in
+\textit{Proc. Eur. Conf. Comput. Vis. (ECCV)}, 2018, pp. 767--783.
+
+\end{thebibliography}
+
+\end{document}

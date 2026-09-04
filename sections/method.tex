@@ -1,0 +1,171 @@
+\section{Method}
+\label{sec:method}
+
+\begin{figure*}[t]
+    \centering
+    \begin{tikzpicture}[
+        font=\footnotesize,
+        >={Latex[length=1.7mm]},
+        bb/.style={draw=gray!65, fill=gray!10, rounded corners=2pt,
+                   minimum height=0.86cm, align=center, inner sep=3.5pt},
+        cpath/.style={draw=vizviolet!75, fill=vizviolet!8, rounded corners=2pt,
+                   minimum height=0.86cm, align=center, inner sep=3.5pt},
+        lbl/.style={font=\scriptsize, text=black!75, align=center},
+    ]
+        % Backbone lane.
+        \node[bb] (frame) at (0.6,0) {Frame $I_t$};
+        \node[bb] (enc)   at (2.5,0) {Image\\encoder};
+        \node[bb] (dec)   at (5.35,0) {Causal streaming\\decoder (frozen)};
+        \node[bb] (heads) at (8.2,0) {Prediction\\heads};
+        \node[anchor=west, align=left, font=\scriptsize] (out) at (9.65,0)
+            {camera $\hat{\mathbf{P}}_t$ \; depth $\hat{\mathbf{D}}_t$\\
+             pointmap $\hat{\mathbf{X}}_t$ \; conf.\ $\hat{\mathbf{C}}_t$};
+        \draw[->, gray!70] (frame) -- (enc);
+        \draw[->, gray!70] (enc) -- (dec);
+        \draw[->, gray!70] (dec) -- (heads);
+        \draw[->, gray!70] (heads) -- (out.west);
+        % Bounded cache with pinned frame-1 cells.
+        \node[cpath, minimum width=3.0cm, minimum height=1.3cm] (cache) at (4.3,-1.95)
+            {};
+        \node[lbl, anchor=north] at ([yshift=-2pt]cache.north) {bounded KV cache};
+        \foreach \i/\c in {0/vizviolet!75, 1/vizviolet!75, 2/vizviolet!15,
+                           3/vizviolet!15, 4/vizviolet!15, 5/vizviolet!15,
+                           6/vizviolet!15, 7/vizviolet!15}{
+            \draw[draw=vizviolet!60, fill=\c]
+                ($(cache.south west)+(0.31+0.31*\i,0.14)$) rectangle ++(0.26,0.26);}
+        \node[font=\tiny, text=white] at ($(cache.south west)+(0.44,0.27)$) {1};
+        \node[font=\tiny, text=white] at ($(cache.south west)+(0.75,0.27)$) {1};
+        \node[lbl, anchor=north] at ([xshift=-0.35cm,yshift=-1pt]cache.south)
+            {$|\mathcal{M}_t|\le B$;\; frame-1 pinned};
+        % Cache-scoring chain.
+        \node[cpath] (cfas) at (7.3,-1.95)  {CFAS\\saliency $r$};
+        \node[cpath] (scr)  at (9.05,-1.95) {SCR\\smoothing $s$};
+        \node[cpath] (tsa)  at (10.95,-1.95) {TSA\\accumul.\ $a$};
+        \node[cpath] (mix)  at (13.05,-1.95) {hybrid $h$\\($\beta$, diversity $d$)};
+        \node[cpath] (bcc)  at (15.35,-1.95) {BCC\\top-$k$ per layer};
+        \draw[->, vizviolet!80] (cfas) -- (scr);
+        \draw[->, vizviolet!80] (scr) -- (tsa);
+        \draw[->, vizviolet!80] (tsa) -- (mix);
+        \draw[->, vizviolet!80] (mix) -- (bcc);
+        % Cache <-> decoder and update loop.
+        \draw[->, vizviolet!80] (cache.north) --
+            node[lbl, left=1pt] {cross-frame\\attention}
+            (cache.north |- dec.south);
+        \draw[->, vizviolet!80] ([xshift=1.05cm]dec.south) to[out=-90, in=90]
+            node[lbl, pos=0.35, right=2pt] {attention maps} (cfas.north);
+        \draw[->, vizviolet!80] (bcc.south) -- ++(0,-0.4) --
+            node[lbl, below=1pt] {update $\mathcal{M}_t$ (used at step $t{+}1$)}
+            ($(cache.south)+(1.2,-0.4)$) -- ([xshift=1.2cm]cache.south);
+    \end{tikzpicture}
+    \caption{Overview of \method. Each incoming frame is encoded and decoded causally against a bounded KV cache, yielding per-frame camera parameters, depth, pointmap, and confidence. The cross-frame attention of the current frame provides a saliency signal for every cached token (CFAS), which is smoothed over the source patch grid (SCR) and accumulated over time (TSA). Budgeted cache compression (BCC) fuses the accumulated importance with a diversity score, allocates the budget across layers, and retains the top-scoring tokens, with the reference frame pinned, so that the cache never exceeds $B$ tokens.}
+    \label{fig:pipeline}
+\end{figure*}
+
+\method\ turns a causal streaming visual geometry transformer into a fixed-memory continual perception system. Given a monocular manipulation stream, it outputs camera parameters, depth, and a dense pointmap for every incoming frame, while a budgeted cache-management mechanism decides which historical tokens remain visible to future frames.
+
+\subsection{Problem Formulation}
+\label{sec:formulation}
+
+We consider a monocular RGB stream $\mathcal{I}=\{I_t\}_{t=1}^{T}$ captured during a robotic manipulation episode. At step $t$ the model observes only the current frame and a bounded cache $\mathcal{M}_{t-1}$ of historical KV tokens, and predicts
+\begin{equation}
+(\hat{\mathbf{P}}_t, \hat{\mathbf{D}}_t, \hat{\mathbf{X}}_t, \hat{\mathbf{C}}_t)
+= f_{\theta}(I_t, \mathcal{M}_{t-1}),
+\label{eq:streaming}
+\end{equation}
+where $\hat{\mathbf{P}}_t=(\hat{\mathbf{K}}_t, \hat{\mathbf{T}}_t)$ contains the camera intrinsics and the camera-to-world pose $\hat{\mathbf{T}}_t\in\mathrm{SE}(3)$, $\hat{\mathbf{D}}_t$ is a per-pixel depth map, $\hat{\mathbf{X}}_t$ is a dense 3D pointmap in the camera coordinates of frame $t$, and $\hat{\mathbf{C}}_t$ is the associated confidence map. We instantiate $f_{\theta}$ with a frozen causal streaming visual geometry transformer~\cite{zhuo2025streamvggt}, which encodes each frame into patch tokens and a few auxiliary tokens~\cite{dosovitskiy2021vit,wang2025vggt} and lets the tokens of frame $t$ attend to the cached KV tokens of all earlier frames~\cite{vaswani2017attention}.
+
+Let $\mathcal{Z}_t^{\ell}$ denote the tokens frame $t$ contributes to decoder layer $\ell\in\{1,\dots,L\}$, with $N_t^{\ell}=|\mathcal{Z}_t^{\ell}|$, and let $\mathcal{M}_t$ be the union of the per-layer caches $\mathcal{M}_t^{\ell}$. If every token is kept, the cache grows by $\sum_{\ell} N_t^{\ell}$ tokens per frame, so memory and per-step attention cost increase linearly and without bound, and for manipulation episodes of hundreds of frames this growth is the dominant deployment bottleneck.
+
+\method\ instead maintains $|\mathcal{M}_t|\le B$ for a fixed token budget $B$ by selecting, at every step and layer, a retained set $\mathcal{R}_t^{\ell}$ from the cached and newly produced tokens. Ideally, retention should preserve the behavior of the unbounded model,
+\begin{equation}
+\begin{aligned}
+\min_{\{\mathcal{R}_t^{\ell}\}}\;
+& \sum_{t=1}^{T}
+\mathcal{L}\!\left(
+f^{\mathrm{geo}}_{\theta}(I_t, \mathcal{M}_{t-1}),\,
+f^{\mathrm{geo}}_{\theta}(I_t, \mathcal{M}^{\mathrm{full}}_{t-1})
+\right) \\
+\text{s.t.}\;
+& \sum\nolimits_{\ell=1}^{L} |\mathcal{R}_t^{\ell}| \le B,
+\qquad \forall t,
+\end{aligned}
+\label{eq:objective}
+\end{equation}
+where $\mathcal{M}^{\mathrm{full}}_{t-1}$ is the unbounded cache, $f^{\mathrm{geo}}_{\theta}$ denotes the camera, depth, and pointmap outputs, and $\mathcal{L}$ is any discrepancy between them. Objective~\eqref{eq:objective} cannot be optimized online, because evaluating the full-cache reference requires exactly the memory we aim to bound, and the effect of evicting a token depends on frames that have not yet arrived. \method\ therefore uses the attention that later frames direct at a cached token as a streaming surrogate for its contribution to~\eqref{eq:objective}, since a token that current queries keep consulting is one whose eviction would perturb future predictions the most.
+
+\subsection{Cross-Frame Attention Saliency}
+\label{sec:cfas}
+
+In the causal decoder, current-frame queries retrieve geometric context from the cache through cross-frame attention. Let $\mathbf{A}^{\ell,h}_{t}\in\mathbb{R}^{N_t^{\ell}\times|\mathcal{M}^{\ell}_{t-1}|}$ be the attention matrix from the layer-$\ell$ queries of frame $t$ to the cached layer-$\ell$ tokens in head $h$. CFAS defines the saliency of cached token $i$ as the attention mass it receives, averaged over the $H$ heads and $N_t^{\ell}$ queries:
+\begin{equation}
+r^{\ell}_{t,i}
+= \frac{1}{H}\sum_{h=1}^{H}\frac{1}{N_t^{\ell}}
+\sum_{j=1}^{N_t^{\ell}}
+\bigl[\mathbf{A}^{\ell,h}_{t}\bigr]_{j,i}.
+\label{eq:cfas}
+\end{equation}
+CFAS measures view dependence rather than local distinctiveness. It is high not for tokens that were salient in their source image, but for tokens the model actively consults from the current viewpoint when reasoning about geometry. In manipulation streams these are typically tokens of repeatedly revisited static workspace structure, whereas tokens covering transient foreground receive little attention once the gripper has moved on. The next two components adapt this signal to visual geometry tokens, which, unlike language tokens, carry 2D image-space and 3D scene structure.
+
+\subsection{Spatial Coherence Regularization}
+\label{sec:scr}
+
+Selecting tokens by $r^{\ell}_{t,i}$ alone produces spatially fragmented caches. Patch tokens tile the image plane, adjacent tokens usually cover the same physical surface, and the dense prediction heads rely on local context, so a cache of isolated survivors degrades depth and pointmap continuity. SCR therefore smooths saliency over the source-frame patch grid. For each source frame $\tau<t$ still represented in the layer-$\ell$ cache, we scatter the scores of its cached patch tokens back onto its patch grid, obtaining a score map $\mathbf{R}^{\ell}_{t,\tau}$ with vacant positions set to zero, and blend it with a Gaussian-filtered copy:
+\begin{equation}
+\widetilde{\mathbf{R}}^{\ell}_{t,\tau}
+= (1-\alpha)\,\mathbf{R}^{\ell}_{t,\tau}
++ \alpha\,\mathcal{G}_{\sigma}\bigl(\mathbf{R}^{\ell}_{t,\tau}\bigr),
+\qquad \alpha\in[0,1],
+\label{eq:scr_blend}
+\end{equation}
+where $\mathcal{G}_{\sigma}$ is a Gaussian filter with scale $\sigma$ and $\alpha$ controls the smoothing strength. Each patch token then reads its smoothed score $s^{\ell}_{t,i}=\widetilde{\mathbf{R}}^{\ell}_{t,t_i}[\mathbf{u}_i]$ at its source frame $t_i$ and source position $\mathbf{u}_i$, while auxiliary tokens, which have no grid position, keep their raw scores $s^{\ell}_{t,i}=r^{\ell}_{t,i}$. SCR does not alter the network's predictions; it only biases retention toward spatially coherent regions, which suits workspace geometry that appears as contiguous surfaces rather than isolated patches.
+
+\subsection{Temporal Saliency Aggregation}
+\label{sec:tsa}
+
+Single-step saliency is noisy, since a token that matters over the long term may receive little attention in one frame because of occlusion, motion blur, or attention fluctuation, while a token noticed once may never be needed again. TSA accumulates saliency with an exponential moving sum,
+\begin{equation}
+a^{\ell}_{t,i} =
+\begin{cases}
+\gamma\, a^{\ell}_{t-1,i} + s^{\ell}_{t,i}, & i\in\mathcal{M}^{\ell}_{t-1},\\[2pt]
+a_{\mathrm{init}}, & i\in\mathcal{Z}^{\ell}_{t},
+\end{cases}
+\label{eq:tsa}
+\end{equation}
+where $\gamma\in[0,1]$ controls how long past evidence persists, and new tokens enter with a fixed score $a_{\mathrm{init}}$ because no later frame has queried them yet. Accumulators of evicted tokens are discarded. TSA separates tokens that are persistently relied upon from tokens that were attended only briefly, which is precisely the distinction between static workspace structure and transient foreground.
+
+\subsection{Budgeted Cache Compression}
+\label{sec:bcc}
+
+After the forward pass of frame $t$, BCC reduces the layer-$\ell$ candidate set $\mathcal{C}^{\ell}_{t}=\mathcal{M}^{\ell}_{t-1}\cup\mathcal{Z}^{\ell}_{t}$ to the retained set $\mathcal{R}^{\ell}_{t}$ under the global budget $B$. Importance alone would repeatedly select near-duplicate tokens of the most-attended surfaces, so BCC balances it against representational diversity $d^{\ell}_{t,i} = 1 - \cos(\mathbf{k}^{\ell}_{i}, \bar{\mathbf{k}}^{\ell}_{t})$, the cosine distance of token $i$'s key to the mean key $\bar{\mathbf{k}}^{\ell}_{t}$ of the candidate set, which is large for tokens carrying rare geometric evidence. Because importance and diversity live on different scales, both are min--max normalized within the layer-$\ell$ candidate set (operator $\operatorname{Norm}^{\ell}_{t}$; a small $\epsilon$ guards the denominator) and fused into the hybrid retention score
+\begin{equation}
+h^{\ell}_{t,i}
+= \beta \operatorname{Norm}^{\ell}_{t}\!\bigl(a^{\ell}_{t,i}\bigr)
++ (1-\beta)\operatorname{Norm}^{\ell}_{t}\!\bigl(d^{\ell}_{t,i}\bigr),
+\label{eq:hybrid}
+\end{equation}
+where $\beta\in[0,1]$ trades importance against diversity.
+
+The budget is distributed across layers in proportion to their mean diversity $D^{\ell}_{t}=\frac{1}{|\mathcal{C}^{\ell}_{t}|}\sum_{i} d^{\ell}_{t,i}$, so layers with more heterogeneous candidates receive more slots:
+\begin{equation}
+\widetilde{B}^{\ell}_{t}
+= \Bigl\lfloor
+B^{\mathrm{free}}\,
+\frac{D^{\ell}_{t}}{\sum_{m=1}^{L} D^{m}_{t}}
+\Bigr\rfloor,
+\qquad
+B^{\mathrm{free}} = B - \sum\nolimits_{\ell} |\mathcal{Z}^{\ell}_{1}|,
+\label{eq:allocation}
+\end{equation}
+where $B^{\mathrm{free}}$ is the budget left after reserving the anchored first frame (below). Slots lost to rounding are redistributed to the layers with the largest fractional remainders, and if all diversities vanish the free budget is split equally. Each layer then keeps its top-scoring candidates,
+\begin{equation}
+\mathcal{R}^{\ell}_{t}
+= \mathcal{Z}^{\ell}_{1} \cup
+\operatorname{TopK}_{\widetilde{B}^{\ell}_{t}}\!
+\bigl(\mathcal{C}^{\ell}_{t}\setminus\mathcal{Z}^{\ell}_{1};\, h^{\ell}_{t}\bigr),
+\label{eq:retention}
+\end{equation}
+where $\operatorname{TopK}_{n}(\cdot\,;h)$ returns the $\min(n,|\cdot|)$ candidates with the highest hybrid scores, and the updated cache is $\mathcal{M}^{\ell}_{t}=\mathcal{R}^{\ell}_{t}$. At $t{=}1$ there is no history, so the cache is initialized with all frame-1 tokens and every accumulator starts at $a_{\mathrm{init}}$.
+
+\textit{Reference-frame anchoring.} The causal backbone expresses all geometry in the coordinate frame of the first frame~\cite{zhuo2025streamvggt}, so the tokens of frame 1 act as the global reference against which every later prediction is aligned. \method\ pins them, excluding them from the top-$K$ selection so they are never evicted, a role analogous to the attention sinks that stabilize streaming language models~\cite{xiao2024streamingllm}. A single frame contributes $|\mathcal{Z}_1|\ll B$ tokens, so the pinned set occupies a small, constant fraction of the budget.
+
+Together, these components keep $|\mathcal{M}_t|\le B$ at every step, so cache memory and per-step attention cost are $O(B)$ regardless of $T$, and the whole mechanism is training-free, adding only score maps and scalar accumulators on top of quantities the backbone already computes.

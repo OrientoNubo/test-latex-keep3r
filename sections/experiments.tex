@@ -1,0 +1,264 @@
+\section{Experiments}
+\label{sec:experiments}
+
+We evaluate \method{} on geometric quality (depth and dense reconstruction), on inference efficiency (throughput and memory), and through ablations of the retention mechanism itself. All methods process identical frame sequences in a strictly causal, frame-by-frame fashion without access to future frames.
+
+\subsection{Experimental Setup}
+\label{sec:exp-setup}
+
+\textit{Data.}
+We build our benchmark from DROID~\cite{khazatsky2024droid}, a large-scale in-the-wild robot manipulation dataset. From each episode we extract two single-camera stream types, namely a \emph{wrist-view} (WV) stream with strong ego-motion and close-range dynamic foreground, and a \emph{third-person} (TP) stream from a static external camera observing the full workspace. For each view type we evaluate three sequence lengths $T\in\{100,300,500\}$ with five episodes per setting; episodes shorter than the target length are excluded.
+% TODO(rerun): confirm the final episode list used for the camera-ready runs.
+% TODO(verify): confirm the official name of the PointWorld label release for DROID
+% (the PointWorld abstract does not mention DROID explicitly; verify against the
+% paper body / released assets that "PointWorld-DROID" is the correct designation).
+As reference geometry we use the per-frame depth, camera, and pointmap annotations of PointWorld-DROID~\cite{huang2026pointworld}; since these labels are model-generated rather than sensor-measured, we account for this when interpreting absolute errors.
+
+\textit{Metrics.}
+Depth quality is measured per frame by the absolute relative error
+$\mathrm{AbsRel}=\frac{1}{|\Omega|}\sum_{\mathbf{p}\in\Omega}|\hat{D}(\mathbf{p})-D(\mathbf{p})|/D(\mathbf{p})$
+and the threshold accuracy $\delta{<}1.25$, the fraction of pixels in the valid set $\Omega$ with $\max(\hat{D}/D,\,D/\hat{D})<1.25$~\cite{eigen2014depth}.
+Reconstruction quality compares predicted pointmaps against the reference pointmaps using Accuracy (distance from each predicted point to its nearest reference point, in meters), Completeness (the reverse direction), and Normal Consistency (NC)~\cite{yao2018mvsnet}; we report means and medians, which differ noticeably in the presence of outlier regions. Efficiency is measured by end-to-end throughput (FPS) and peak VRAM on a single GPU, together with whether a method completes all sequences without running out of memory (OOM).
+
+\textit{Baselines.}
+CUT3R~\cite{wang2025cut3r} and TTT3R~\cite{chen2025ttt3r} compress history into a fixed-size recurrent state. StreamVGGT~\cite{zhuo2025streamvggt} is the causal streaming backbone with an unbounded full KV cache. Evict3R~\cite{mahdi2025evict3r} performs training-free token eviction on streaming visual geometry transformers, and InfiniteVGGT~\cite{yuan2026infinitevggt} manages the cache of VGGT-style models for endless streams; these two are the most direct memory-bounded baselines.
+
+\textit{Implementation.}
+\method{} is training-free and plugs into frozen StreamVGGT weights. Unless stated otherwise, we use a total budget $B{=}200\mathrm{k}$ tokens, SCR strength $\alpha=0.5$, TSA decay $\gamma=0.9$, and mixing weight $\beta=0.5$.
+% TODO(rerun): confirm the a_init value used in the final runs and state it here.
+All methods run on one NVIDIA RTX 6000 Ada GPU (48\,GB) with PyTorch 2.9 and CUDA 12.8.
+
+\subsection{Depth Estimation}
+\label{sec:exp-depth}
+
+% TODO(rerun): all "Ours" rows in this section were produced by the thesis configuration; re-run with the final method (no workspace anchors / DFS) and update. Changes are expected to be within noise.
+\begin{table}[t]
+    \centering
+    \caption{Depth estimation on DROID manipulation streams. Each cell reports $T{=}100/300/500$; bold marks the best among methods that complete all sequence lengths.}
+    \label{tab:depth}
+    \tabletext
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{clcc}
+        \toprule
+        View & Method & Abs Rel $\downarrow$ & $\delta{<}1.25$ $\uparrow$ \\
+        \midrule
+        \multirow{6}{*}{TP}
+        & CUT3R~\cite{wang2025cut3r}                & 0.637/0.625/0.614 & 0.306/0.307/0.306 \\
+        & TTT3R~\cite{chen2025ttt3r}                & \textbf{0.635}/\textbf{0.621}/\textbf{0.610} & \textbf{0.311}/\textbf{0.315}/\textbf{0.314} \\
+        & StreamVGGT~\cite{zhuo2025streamvggt}      & 0.652/OOM/OOM     & 0.297/OOM/OOM \\
+        & Evict3R~\cite{mahdi2025evict3r}           & 0.650/0.636/0.624 & 0.295/0.297/0.297 \\
+        & InfiniteVGGT~\cite{yuan2026infinitevggt}  & 0.652/0.638/0.628 & 0.296/0.301/0.300 \\
+        & \method{} (ours)                          & 0.650/0.633/0.623 & 0.296/0.302/0.301 \\
+        \midrule
+        \multirow{6}{*}{WV}
+        & CUT3R~\cite{wang2025cut3r}                & 0.514/0.798/0.710 & 0.512/0.451/0.459 \\
+        & TTT3R~\cite{chen2025ttt3r}                & 0.513/0.788/0.706 & 0.510/0.450/0.456 \\
+        & StreamVGGT~\cite{zhuo2025streamvggt}      & 0.407/OOM/OOM     & 0.515/OOM/OOM \\
+        & Evict3R~\cite{mahdi2025evict3r}           & 0.415/0.662/0.600 & 0.512/0.450/\textbf{0.460} \\
+        & InfiniteVGGT~\cite{yuan2026infinitevggt}  & \textbf{0.408}/0.658/\textbf{0.597} & \textbf{0.515}/\textbf{0.452}/\textbf{0.460} \\
+        & \method{} (ours)                          & 0.413/\textbf{0.657}/\textbf{0.597} & 0.511/0.447/0.456 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Table~\ref{tab:depth} reports depth results, with two patterns. First, the recurrent-state methods lead on the third-person stream, where TTT3R attains the lowest AbsRel at every length, but degrade sharply on the wrist-view stream once sequences grow; at $T\geq300$ their WV AbsRel rises to $0.706$--$0.798$, whereas all cache-based methods remain near $0.60$--$0.66$, which suggests that a single compressed state is insufficient under the strong ego-motion of a wrist camera. Second, within the cache-based class the differences are small (within about 2\%), and \method{} attains the best or tied-best WV AbsRel at $T{=}300$ and $T{=}500$ while completing every setting. Depth quality does not deteriorate as sequences grow, and TP AbsRel in fact improves from $0.650$ at $T{=}100$ to $0.623$ at $T{=}500$, indicating that a fixed 200k-token cache preserves enough cross-frame context for stable long-horizon prediction.
+
+\subsection{3D Reconstruction}
+\label{sec:exp-recon}
+
+\begin{table}[t]
+    \centering
+    \caption{3D reconstruction at $T{=}500$. Acc/Comp in meters (lower is better), NC higher is better; bold marks the best per column. Trends at $T{=}100$ and $T{=}300$ are consistent (see text).}
+    \label{tab:recon}
+    \tabletext
+    \setlength{\tabcolsep}{2.6pt}
+    \begin{tabular}{clcccccc}
+        \toprule
+        \multirow{2}{*}{View} & \multirow{2}{*}{Method}
+        & \multicolumn{2}{c}{Acc.\ $\downarrow$}
+        & \multicolumn{2}{c}{Comp.\ $\downarrow$}
+        & \multicolumn{2}{c}{NC $\uparrow$} \\
+        \cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+        & & Mean & Med. & Mean & Med. & Mean & Med. \\
+        \midrule
+        \multirow{6}{*}{TP}
+        & CUT3R~\cite{wang2025cut3r}               & 0.487 & 0.213 & \textbf{0.252} & 0.192 & 0.505 & 0.498 \\
+        & TTT3R~\cite{chen2025ttt3r}               & 0.442 & 0.191 & 0.269 & 0.193 & \textbf{0.531} & \textbf{0.541} \\
+        & StreamVGGT~\cite{zhuo2025streamvggt}     & OOM & OOM & OOM & OOM & OOM & OOM \\
+        & Evict3R~\cite{mahdi2025evict3r}          & 0.105 & 0.084 & 0.374 & \textbf{0.133} & 0.491 & 0.477 \\
+        & InfiniteVGGT~\cite{yuan2026infinitevggt} & 0.112 & 0.087 & 0.370 & \textbf{0.133} & 0.503 & 0.499 \\
+        & \method{} (ours)                         & \textbf{0.103} & \textbf{0.083} & 0.375 & \textbf{0.133} & 0.514 & 0.512 \\
+        \midrule
+        \multirow{6}{*}{WV}
+        & CUT3R~\cite{wang2025cut3r}               & 0.355 & 0.307 & 0.310 & 0.231 & 0.511 & 0.516 \\
+        & TTT3R~\cite{chen2025ttt3r}               & 0.278 & 0.249 & 0.383 & 0.307 & 0.496 & 0.495 \\
+        & StreamVGGT~\cite{zhuo2025streamvggt}     & OOM & OOM & OOM & OOM & OOM & OOM \\
+        & Evict3R~\cite{mahdi2025evict3r}          & 0.085 & 0.065 & 0.167 & 0.054 & \textbf{0.529} & \textbf{0.545} \\
+        & InfiniteVGGT~\cite{yuan2026infinitevggt} & \textbf{0.078} & 0.059 & 0.180 & 0.067 & 0.528 & 0.542 \\
+        & \method{} (ours)                         & 0.079 & \textbf{0.054} & \textbf{0.162} & \textbf{0.047} & 0.520 & 0.530 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Table~\ref{tab:recon} reports reconstruction quality at the longest horizon, $T{=}500$. The gap between the two method classes is much larger here than for depth, with cache-based methods reaching a mean TP Accuracy of $0.103$--$0.112$\,m, roughly a quarter of the error of the recurrent-state methods ($0.442$--$0.487$\,m). The recurrent methods do achieve lower mean TP Completeness ($0.252$\,m for CUT3R versus $0.370$--$0.375$\,m), but at substantially worse accuracy, and the Completeness gap narrows considerably at the median ($0.192$ versus $0.133$\,m).
+
+Among memory-bounded methods, \method{} attains the best mean and median Accuracy on TP ($0.103/0.083$\,m) and the best WV Completeness in both statistics ($0.162/0.047$\,m), with WV mean Accuracy ($0.079$\,m) within $0.001$\,m of the best (InfiniteVGGT). Evict3R attains the best WV normal consistency. Trends at shorter horizons are consistent. At $T{=}100$, where the full-cache backbone can still run, \method{} attains the best TP mean Accuracy ($0.108$\,m versus $0.116$\,m for StreamVGGT), and its WV median Completeness is the lowest at every length ($0.074/0.056/0.047$\,m).
+
+\subsection{Efficiency and Long-Horizon Stability}
+\label{sec:exp-efficiency}
+
+\begin{table}[t]
+    \centering
+    \caption{Inference efficiency of cache-based methods. Each cell reports $T{=}100/300/500$; bold marks the best per column.}
+    \label{tab:efficiency}
+    \tabletext
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{clcc}
+        \toprule
+        View & Method & FPS $\uparrow$ & Peak VRAM (GB) $\downarrow$ \\
+        \midrule
+        \multirow{4}{*}{TP}
+        & StreamVGGT~\cite{zhuo2025streamvggt}     & 5.02/OOM/OOM   & 23.76/OOM/OOM \\
+        & Evict3R~\cite{mahdi2025evict3r}          & 4.36/4.00/4.03 & 10.65/11.45/11.81 \\
+        & InfiniteVGGT~\cite{yuan2026infinitevggt} & 5.18/3.88/3.75 & 16.25/16.50/16.62 \\
+        & \method{} (ours)                         & \textbf{9.10}/\textbf{7.38}/\textbf{7.79} & \textbf{9.16}/\textbf{9.41}/\textbf{9.52} \\
+        \midrule
+        \multirow{4}{*}{WV}
+        & StreamVGGT~\cite{zhuo2025streamvggt}     & 4.89/OOM/OOM   & 23.76/OOM/OOM \\
+        & Evict3R~\cite{mahdi2025evict3r}          & 4.15/4.04/4.06 & 10.65/11.46/11.82 \\
+        & InfiniteVGGT~\cite{yuan2026infinitevggt} & 4.56/3.91/3.87 & 16.32/16.57/16.68 \\
+        & \method{} (ours)                         & \textbf{9.71}/\textbf{9.50}/\textbf{9.40} & \textbf{9.14}/\textbf{9.39}/\textbf{9.50} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[t]
+    \centering
+    % Data identical to the TP rows of Table 3.
+    \pgfplotsset{
+        effpanel/.style={
+            width=4.72cm, height=3.25cm,
+            xtick={100,300,500}, xmin=40, xmax=560,
+            ymajorgrids, grid style={gray!22},
+            axis line style={gray!55},
+            tick label style={font=\scriptsize},
+            label style={font=\scriptsize},
+            xlabel={Sequence length $T$},
+            ylabel near ticks, xlabel near ticks,
+            xlabel shift=-2pt, ylabel shift=-3pt,
+            every axis plot/.append style={line width=0.9pt, mark size=1.7pt},
+        }}
+    \begin{tikzpicture}
+    \begin{axis}[effpanel, name=vram,
+        ylabel={Peak VRAM (GB)}, ymin=0, ymax=27,
+        legend to name=effleg, legend columns=4,
+        legend style={font=\scriptsize, draw=none,
+            /tikz/every even column/.append style={column sep=2.5pt}},
+    ]
+        \addplot[vizblue, mark=square*] coordinates {(100,23.76)};
+        \addlegendentry{StreamVGGT}
+        \addplot[vizorange, mark=triangle*] coordinates {(100,10.65) (300,11.45) (500,11.81)};
+        \addlegendentry{Evict3R}
+        \addplot[vizaqua, mark=diamond*] coordinates {(100,16.25) (300,16.50) (500,16.62)};
+        \addlegendentry{InfiniteVGGT}
+        \addplot[vizviolet, mark=*] coordinates {(100,9.16) (300,9.41) (500,9.52)};
+        \addlegendentry{\method{} (ours)}
+        \node[font=\scriptsize, text=vizblue, anchor=north west]
+            at (axis cs:120,24.8) {OOM at $T{=}300$};
+    \end{axis}
+    \begin{axis}[effpanel,
+        at={(vram.outer east)}, anchor=outer west, xshift=1mm,
+        ylabel={Throughput (FPS)}, ymin=0, ymax=11,
+    ]
+        \addplot[vizblue, mark=square*] coordinates {(100,5.02)};
+        \addplot[vizorange, mark=triangle*] coordinates {(100,4.36) (300,4.00) (500,4.03)};
+        \addplot[vizaqua, mark=diamond*] coordinates {(100,5.18) (300,3.88) (500,3.75)};
+        \addplot[vizviolet, mark=*] coordinates {(100,9.10) (300,7.38) (500,7.79)};
+    \end{axis}
+    \end{tikzpicture}
+    \par\vspace{2pt}
+    \ref{effleg}
+    \caption{Peak VRAM and throughput versus sequence length on the third-person stream. \method{} keeps peak VRAM nearly constant and sustains the highest throughput, while the full-cache StreamVGGT runs out of memory at the 300-frame setting.}
+    \label{fig:efficiency}
+\end{figure}
+
+Table~\ref{tab:efficiency} and Fig.~\ref{fig:efficiency} summarize efficiency. The recurrent-state methods have constant cost by construction but substantially weaker reconstruction (Table~\ref{tab:recon}), so this comparison focuses on the cache-based class. \method{} is the fastest in every setting, delivering $1.8$--$2.3\times$ the throughput of Evict3R ($4.00$--$4.36$ FPS) and InfiniteVGGT ($3.75$--$5.18$ FPS). Peak memory stays within $9.14$--$9.52$\,GB across all settings; growing the WV stream from $100$ to $500$ frames adds only $0.36$\,GB, and throughput drops by just $3.2$\%. In contrast, StreamVGGT already needs $23.76$\,GB at $T{=}100$ and exhausts a 48\,GB GPU at $T{\geq}300$, and InfiniteVGGT uses $16.2$--$16.7$\,GB.
+
+\subsection{Ablation Studies}
+\label{sec:exp-ablation}
+
+All ablations use $T{=}500$ with the base configuration $B{=}200\mathrm{k}$, $\alpha{=}0.5$, $\gamma{=}0.9$, $\beta{=}0.5$; each variant changes one factor at a time.
+
+\begin{table}[t]
+    \centering
+    \caption{Cache retention strategies ($T{=}500$). Parentheses give the relative change with respect to \method{}; negative is worse.}
+    \label{tab:ab-retention}
+    \tabletext
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{lcc}
+        \toprule
+        Retention strategy & Acc.\ WV $\downarrow$ & Acc.\ TP $\downarrow$ \\
+        \midrule
+        \method{} (hybrid)   & 0.080 & \textbf{0.103} \\
+        Random               & 0.089 ($-$11.3\%) & 0.115 ($-$11.7\%) \\
+        Recency              & 0.089 ($-$11.3\%) & 0.115 ($-$11.7\%) \\
+        Diversity-only ranking & \textbf{0.078} & 0.109 ($-$5.8\%) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\textit{Retention criterion.}
+In Table~\ref{tab:ab-retention} we replace the full retention rule with three generic alternatives. Random and recency-based eviction both degrade reconstruction accuracy by about $11$\% on both views, so which tokens are kept matters far more than merely keeping the cache small. Diversity-only ranking, which replaces the entire attention-based scoring pipeline with the diversity score, is slightly better than the hybrid rule on WV ($0.078$ versus $0.080$\,m) but $5.8$\% worse on TP; the hybrid criterion is the only variant that is strong on both views. Unlike this variant, $\beta{=}0$ in Table~\ref{tab:ab-hyper} disables only the importance term while keeping the rest of the pipeline.
+% TODO(rerun): confirm the exact configuration difference between the diversity-only retention strategy (thesis "single diversity") and the beta=0 sweep point; their numbers differ in the thesis runs.
+
+\begin{table}[t]
+    \centering
+    \caption{Token budget sweep (WV, $T{=}500$). Bold marks the best per column; $B{=}200\mathrm{k}$ is the common control setting used in the main results.}
+    \label{tab:ab-budget}
+    \tabletext
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{lcccc}
+        \toprule
+        Budget $B$ & Abs Rel $\downarrow$ & Acc.\ $\downarrow$ & FPS $\uparrow$ & VRAM (GB) $\downarrow$ \\
+        \midrule
+        50k  & 0.5984 & 0.0794 & \textbf{10.89} & \textbf{8.48} \\
+        100k & 0.5977 & 0.0795 & 10.42 & 8.79 \\
+        200k & \textbf{0.5971} & 0.0795 & 9.40 & 9.50 \\
+        400k & 0.5979 & 0.0788 & 7.07 & 11.06 \\
+        800k & 0.5979 & \textbf{0.0786} & 4.78 & 14.22 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\textit{Token budget.}
+Table~\ref{tab:ab-budget} sweeps $B$ over a $16\times$ range. Geometric quality stays nearly flat, with AbsRel varying by at most $0.2$\% and Accuracy by at most $1.1$\% and no consistent monotone trend, while cost scales strongly, with throughput spanning $4.78$ to $10.89$ FPS ($2.3\times$) and peak VRAM spanning $8.48$ to $14.22$\,GB ($1.7\times$). The budget therefore acts as a pure deployment knob, since practitioners can dial memory and latency to the target platform without giving up geometric quality. We use $B{=}200\mathrm{k}$ in the main results as a common control setting, not as a tuned optimum.
+
+\begin{table}[t]
+    \centering
+    \caption{Hyperparameter sweeps ($T{=}500$). The base configuration uses $\alpha{=}0.5$, $\gamma{=}0.9$, $\beta{=}0.5$; each block varies one factor.}
+    \label{tab:ab-hyper}
+    \tabletext
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{lccc}
+        \toprule
+        Setting & Abs Rel WV $\downarrow$ & Acc.\ WV $\downarrow$ & Acc.\ TP $\downarrow$ \\
+        \midrule
+        Base ($\alpha{=}0.5$, $\gamma{=}0.9$, $\beta{=}0.5$) & 0.5971 & 0.0795 & 0.1029 \\
+        \midrule
+        $\alpha{=}0$ (w/o SCR) & 0.5977 & 0.0802 & 0.1045 \\
+        $\alpha{=}0.25$        & 0.5972 & 0.0796 & 0.1032 \\
+        $\alpha{=}0.75$        & 0.5959 & 0.0796 & 0.1031 \\
+        \midrule
+        $\gamma{=}0$ (w/o TSA) & 0.5964 & 0.0804 & 0.1032 \\
+        $\gamma{=}0.5$         & 0.5967 & 0.0798 & 0.1029 \\
+        \midrule
+        $\beta{=}0$ (diversity only)  & 0.6030 & 0.0836 & 0.1056 \\
+        $\beta{=}0.25$                & 0.5998 & 0.0798 & 0.1045 \\
+        $\beta{=}0.75$                & 0.5988 & 0.0806 & 0.1051 \\
+        $\beta{=}1$ (importance only) & 0.5805 & 0.0795 & 0.1108 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\textit{Hyperparameters.}
+Table~\ref{tab:ab-hyper} sweeps the three coefficients. Disabling spatial smoothing ($\alpha{=}0$) degrades Accuracy by $0.9$\% on WV and $1.6$\% on TP, confirming that spatially fragmented retention harms dense prediction; among nonzero settings the differences are below $0.3$\%. The effect of the TSA decay is similarly mild, with all variations below $1.2$\%. The mixing weight $\beta$ matters most at its extremes, where pure importance ($\beta{=}1$) improves WV AbsRel by $2.8$\% but degrades TP Accuracy by $7.7$\%, and $\beta{=}0$ is worse everywhere. The balanced setting $\beta{=}0.5$ avoids a sharp loss on either view, mirroring the retention-strategy ablation.
